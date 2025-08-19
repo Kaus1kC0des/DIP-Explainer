@@ -6,21 +6,28 @@ from scipy.fft import fft2, ifft2, fftshift, ifftshift
 
 # Function to create a simple sample image (a gradient with a circle)
 def create_sample_image():
-    """Generates a sample image with a gradient background and a white circle."""
+    """Generates a sample RGB image with a gradient background and a white circle.
+
+    Returns a PIL RGB Image. The processing pipeline in this demo still runs on a
+    grayscale copy derived from the color image.
+    """
     width, height = 300, 300
-    img = np.zeros((height, width), dtype=np.uint8)
+    gray = np.zeros((height, width), dtype=np.uint8)
     # Create a simple horizontal gradient
     for i in range(width):
-        img[:, i] = np.linspace(0, 255, height, dtype=np.uint8)
-    
+        gray[:, i] = np.linspace(0, 255, height, dtype=np.uint8)
+
     # Draw a white circle in the center
     center_x, center_y = width // 2, height // 2
     radius = 60
     for x in range(width):
         for y in range(height):
             if (x - center_x)**2 + (y - center_y)**2 < radius**2:
-                img[y, x] = 255
-    return Image.fromarray(img)
+                gray[y, x] = 255
+
+    # Make an RGB image by stacking the gray channel
+    rgb = np.stack([gray, gray, gray], axis=2)
+    return Image.fromarray(rgb)
 
 # --- Point Operations (Spatial Domain) ---
 
@@ -259,8 +266,11 @@ operations = {
 }
 
 # Initialize session state for the image if it doesn't exist
-if 'current_image_np' not in st.session_state:
-    st.session_state.current_image_np = np.array(create_sample_image().convert('L'))
+if 'current_image_color' not in st.session_state or 'current_image_np' not in st.session_state:
+    sample_color = np.array(create_sample_image())  # RGB
+    sample_gray = cv2.cvtColor(sample_color, cv2.COLOR_RGB2GRAY)
+    st.session_state.current_image_color = sample_color
+    st.session_state.current_image_np = sample_gray
 
 # Create a container for the controls in a sidebar
 with st.sidebar:
@@ -269,8 +279,13 @@ with st.sidebar:
     
     if uploaded_file is not None:
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        img_np = cv2.imdecode(file_bytes, 0)  # 0 to load as grayscale
-        st.session_state.current_image_np = img_np
+        # Decode as color (BGR) then convert to RGB for display
+        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if img_bgr is not None:
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+            st.session_state.current_image_color = img_rgb
+            st.session_state.current_image_np = img_gray
     
     st.header("Operation Controls")
     
@@ -309,10 +324,10 @@ with st.sidebar:
 # Create columns for displaying the images
 col1, col2 = st.columns(2)
 
-# Display the original image from session state
+# Display the original image (color) from session state
 with col1:
-    st.header("Original Image")
-    st.image(st.session_state.current_image_np, use_container_width=True)
+    st.header("Original Image (Color)")
+    st.image(st.session_state.current_image_color, use_container_width=True)
 
 # Process and display the image when the button is clicked
 if try_button:
